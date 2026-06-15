@@ -199,6 +199,10 @@ export default function Request() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [photo, setPhoto] = useState(null);
+  const [collegeName, setCollegeName] = useState('');
+  const [department, setDepartment] = useState('');
+  const [year, setYear] = useState('I');
+  const [collegeCity, setCollegeCity] = useState('');
 
   const showToast = (message, type = 'ok') => {
     setToast({ message, type, show: true });
@@ -211,6 +215,9 @@ export default function Request() {
     if (!mobile || mobile.replace(/\D/g, '').length < 10) { showToast('❌ Enter a valid 10-digit mobile number.', 'err'); return; }
     if (!/^[a-zA-Z\s\.]+$/.test(name.trim())) { showToast('❌ Name contains invalid characters. Only letters are allowed.', 'err'); return; }
     if (!/^[a-zA-Z0-9\s\.\-\(\)]+$/.test(domain.trim())) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+    if (!collegeName.trim()) { showToast('❌ College Name is required.', 'err'); return; }
+    if (!department.trim()) { showToast('❌ Department is required.', 'err'); return; }
+    if (!collegeCity.trim()) { showToast('❌ College City is required.', 'err'); return; }
     if (new Date(startDate) > new Date(endDate)) { showToast('❌ Epoch timeline bounds parameters are reversed.', 'err'); return; }
 
     setLoading(true);
@@ -240,7 +247,11 @@ export default function Request() {
         start_date: startDate,
         end_date: endDate,
         photo_url: photo,
-        cert_no: `PENDING/${String(Date.now()).slice(-5)}`
+        cert_no: `PENDING/${String(Date.now()).slice(-5)}`,
+        college_name: collegeName.trim(),
+        department: department.trim(),
+        year: year,
+        college_city: collegeCity.trim()
       };
 
       const { error: insertError } = await supabase.from('certificates').insert([requestPayload]);
@@ -250,6 +261,7 @@ export default function Request() {
       } else {
         showToast('🎉 Application successfully submitted to active logs!', 'ok');
         setName(''); setMobile(''); setDomain(''); setStartDate(''); setEndDate(''); setPhoto(null);
+        setCollegeName(''); setDepartment(''); setYear('I'); setCollegeCity('');
         setTimeout(() => navigate('/'), 2000);
       }
     } catch (err) {
@@ -292,7 +304,7 @@ export default function Request() {
               <label className="verify-style-label">Full Candidate Name</label>
               <input
                 type="text" className="verify-style-input" placeholder="ENTER YOUR LEGAL NAME"
-                value={name} onChange={e => setName(e.target.value)} required
+                value={name} onChange={e => setName(e.target.value.toUpperCase())} required
               />
             </div>
 
@@ -301,6 +313,40 @@ export default function Request() {
               <input
                 type="tel" maxLength="10" className="verify-style-input" placeholder="10-digit primary contact"
                 value={mobile} onChange={e => setMobile(e.target.value.replace(/\D/g, ''))} required
+              />
+            </div>
+
+            <div className="igroup f-full">
+              <label className="verify-style-label">College Name</label>
+              <input
+                type="text" className="verify-style-input" placeholder="Enter College Name"
+                value={collegeName} onChange={e => setCollegeName(e.target.value)} required
+              />
+            </div>
+
+            <div className="igroup">
+              <label className="verify-style-label">Department</label>
+              <input
+                type="text" className="verify-style-input" placeholder="e.g. Computer Science"
+                value={department} onChange={e => setDepartment(e.target.value)} required
+              />
+            </div>
+
+            <div className="igroup">
+              <label className="verify-style-label">Year</label>
+              <select className="verify-style-input verify-style-select" value={year} onChange={e => setYear(e.target.value)}>
+                <option value="I">I</option>
+                <option value="II">II</option>
+                <option value="III">III</option>
+                <option value="IV">IV</option>
+              </select>
+            </div>
+
+            <div className="igroup f-full">
+              <label className="verify-style-label">College City</label>
+              <input
+                type="text" className="verify-style-input" placeholder="Enter College City"
+                value={collegeCity} onChange={e => setCollegeCity(e.target.value)} required
               />
             </div>
 

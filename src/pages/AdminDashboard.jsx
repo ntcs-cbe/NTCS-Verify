@@ -237,6 +237,8 @@ export default function AdminDashboard() {
   /* Request tab state */
   const [requestActionRecord, setRequestActionRecord] = useState(null);
   const [isAcceptModalOpen, setIsAcceptModalOpen] = useState(false);
+  const [detailsRecord, setDetailsRecord] = useState(null);
+  const [zoomedImage, setZoomedImage] = useState(null);
 
   const showToast = (message, type = 'ok') => {
     setToast({ message, type, show: true });
@@ -724,6 +726,7 @@ export default function AdminDashboard() {
                           <td style={{ fontSize:'12px', color:'var(--muted)', whiteSpace:'nowrap' }}>{formatDate(c.start_date)} – {formatDate(c.end_date)}</td>
                           <td>
                             <div className="act-btns">
+                              <button className="ab ab-view" onClick={() => setDetailsRecord(c)}>ℹ️ Details</button>
                               <button className="ab ab-view" onClick={()=>navigate('/result',{state:{certificate:c}})}>👁 View</button>
                               <button className="ab ab-edit" onClick={()=>openEdit(c)}>✏️ Edit</button>
                               
@@ -861,6 +864,7 @@ export default function AdminDashboard() {
                           <td style={{ fontSize:'12px', color:'var(--muted)', whiteSpace:'nowrap' }}>{formatDate(r.start_date)} - {formatDate(r.end_date)}</td>
                           <td>
                             <div className="act-btns">
+                              <button className="ab ab-view" onClick={() => setDetailsRecord(r)}>ℹ️ Details</button>
                               <button className="ab ab-dl" onClick={() => openAcceptModal(r)}>✅ Approve</button>
                               <button className="ab ab-del" onClick={() => handleRejectRequest(r)}>✕ Decline</button>
                             </div>
@@ -982,6 +986,84 @@ export default function AdminDashboard() {
           </form>
         </div>
       </div>
+
+      {/* ── DETAILS MODAL OVERLAY ── */}
+      <div className={`overlay ${detailsRecord?'open':''}`} onClick={(e)=>{if(e.target.classList.contains('overlay')) setDetailsRecord(null);}}>
+        {detailsRecord && (
+          <div className="modal" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>📄 User Details</h3>
+              <button type="button" className="modal-close" onClick={() => setDetailsRecord(null)}>✕</button>
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', background: 'var(--white)', borderRadius: '0 0 16px 16px' }}>
+              
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center', paddingBottom: '20px', borderBottom: '1px dashed var(--slate-200)' }}>
+                {detailsRecord.photo_url ? (
+                  <div style={{ position: 'relative', cursor: 'pointer', flexShrink: 0, padding: '4px', background: '#fff', border: '1px solid var(--slate-200)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} onClick={() => setZoomedImage(detailsRecord.photo_url)} title="Tap to zoom">
+                    <img src={detailsRecord.photo_url} alt="Profile" style={{ width: '90px', height: '110px', borderRadius: '8px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: '6px', padding: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>🔍</div>
+                  </div>
+                ) : (
+                  <div style={{ width: '90px', height: '110px', borderRadius: '12px', background: 'var(--slate-50)', border: '1px dashed var(--slate-300)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', flexShrink: 0 }}>👤</div>
+                )}
+                
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h4 style={{ margin: '0 0 6px', fontSize: '20px', fontWeight: 800, color: 'var(--slate-900)', fontFamily: 'var(--font-display, sans-serif)' }}>{detailsRecord.student_name}</h4>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'var(--cyan-50)', color: 'var(--cyan-700)', borderRadius: '20px', fontSize: '12px', fontWeight: 700, border: '1px solid var(--cyan-200)' }}>
+                    📱 {detailsRecord.mobile}
+                  </div>
+                  <div style={{ marginTop: '16px', fontSize: '13px', color: 'var(--slate-600)', fontWeight: 600, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <span style={{ fontSize: '14px' }}>🎓</span> 
+                      <span style={{ lineHeight: '1.4' }}>{detailsRecord.college_name || 'College not specified'}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px' }}>🏛️</span> 
+                      <span>{detailsRecord.department || 'Department not specified'} {detailsRecord.year ? `(Year: ${detailsRecord.year})` : ''}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px' }}>📍</span> 
+                      <span>{detailsRecord.college_city || 'City not specified'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: 'var(--slate-50)', padding: '14px', borderRadius: '12px', border: '1px solid var(--slate-100)', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                  <div style={{ fontSize: '10.5px', color: 'var(--slate-500)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Program Type</div>
+                  <div><span className={`badge ${detailsRecord.program_type==='Internship'?'b-intern':'b-training'}`} style={{ transform: 'scale(0.9)', transformOrigin: 'left center', margin: 0 }}>{detailsRecord.program_type}</span></div>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: '14px', borderRadius: '12px', border: '1px solid var(--slate-100)', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                  <div style={{ fontSize: '10.5px', color: 'var(--slate-500)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Domain / Specialization</div>
+                  <div style={{ fontWeight: 800, color: 'var(--slate-800)', fontSize: '13.5px' }}>{detailsRecord.domain}</div>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: '14px', borderRadius: '12px', border: '1px solid var(--slate-100)', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                  <div style={{ fontSize: '10.5px', color: 'var(--slate-500)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Start Date</div>
+                  <div style={{ fontWeight: 800, color: 'var(--slate-800)', fontSize: '13.5px' }}>📅 {formatDate(detailsRecord.start_date)}</div>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: '14px', borderRadius: '12px', border: '1px solid var(--slate-100)', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                  <div style={{ fontSize: '10.5px', color: 'var(--slate-500)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>End Date</div>
+                  <div style={{ fontWeight: 800, color: 'var(--slate-800)', fontSize: '13.5px' }}>📅 {formatDate(detailsRecord.end_date)}</div>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" onClick={() => setDetailsRecord(null)} style={{ padding: '10px 24px', borderRadius: '8px', border: '1px solid var(--slate-200)', background: 'linear-gradient(to bottom, #fff, #f8fafc)', fontSize: '13px', fontWeight: 700, color: 'var(--slate-700)', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.03)', transition: 'all 0.2s' }}>Close Viewer</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── ZOOMED IMAGE OVERLAY ── */}
+      {zoomedImage && (
+        <div className="overlay open" onClick={() => setZoomedImage(null)} style={{ zIndex: 4000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', padding: '24px' }}>
+          <img src={zoomedImage} alt="Zoomed Profile" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '12px', objectFit: 'contain', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }} />
+          <button type="button" onClick={() => setZoomedImage(null)} style={{ position: 'absolute', top: '24px', right: '24px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: '40px', height: '40px', borderRadius: '50%', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+      )}
+
 
       {/* ── TOAST HUD ── */}
       <div className={`toast ${toast.type} ${toast.show?'show':''}`}>{toast.message}</div>

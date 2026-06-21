@@ -31,8 +31,16 @@ export default function Verify() {
       const isAutoHidden = data && data.end_date && data.end_date > todayStr;
       const isHidden = data && (data.is_hidden || isAutoHidden);
 
-      if (error || !data || isHidden) {
+      if (error || !data) {
         triggerPopup('error', 'No matching certificate found. Please check your details.');
+        setLoading(false);
+      } else if (isHidden) {
+        if (isAutoHidden) {
+          const [yyyy, mm, dd] = data.end_date.split('-');
+          triggerPopup('error', `Certificate is locked. It will be available to download on ${dd}/${mm}/${yyyy}.`);
+        } else {
+          triggerPopup('error', 'Certificate is currently locked. Please contact support.');
+        }
         setLoading(false);
       } else {
         triggerPopup('success', 'Certificate verified! Redirecting...');

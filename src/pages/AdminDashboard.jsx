@@ -302,11 +302,11 @@ export default function AdminDashboard() {
   /* ── Auto cert no ── */
   const calculateNextCertNo = (programType) => {
     const yr = String(new Date().getFullYear()).slice(-2);
-    const pfx = programType === 'Internship' ? 'I' : 'T';
-    const prefix = `NTCS${yr}${pfx}/T`;
+    // Since training certificate numbers also use the 'I' prefix: NTCS26I/T001 auto
+    const prefix = `NTCS${yr}I/T`;
     let max = 0;
     certs.forEach(c => {
-      if (c.cert_no && c.cert_no.startsWith(prefix)) {
+      if (c.program_type === programType && c.cert_no && c.cert_no.startsWith(prefix)) {
         const suffix = c.cert_no.substring(prefix.length);
         if (/^\d+$/.test(suffix)) {
           max = Math.max(max, parseInt(suffix, 10));

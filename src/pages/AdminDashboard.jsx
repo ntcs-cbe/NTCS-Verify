@@ -26,6 +26,7 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   const CROP_W_DISPLAY = 170;
   const CROP_H_DISPLAY = Math.round(170 * (195 / 165));
 
+  const [rotation,   setRotation]   = useState(0);
   const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 });
   const [scale,      setScale]      = useState(1);
   const [pos,        setPos]        = useState({ x: 0, y: 0 });
@@ -34,25 +35,89 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   const cropLeft = (CONTAINER_W - CROP_W_DISPLAY) / 2;
   const cropTop  = (CONTAINER_H - CROP_H_DISPLAY) / 2;
 
-  const clamp = useCallback((newPos, s, iw, ih) => {
+  const clamp = useCallback((newPos, s, iw, ih, rot = 0) => {
     const dw = iw * s;
     const dh = ih * s;
-    return {
-      x: Math.min(cropLeft, Math.max(cropLeft + CROP_W_DISPLAY - dw, newPos.x)),
-      y: Math.min(cropTop,  Math.max(cropTop  + CROP_H_DISPLAY - dh, newPos.y)),
-    };
+    const rad = (rot * Math.PI) / 180;
+    const cosVal = Math.cos(rad);
+    const sinVal = Math.sin(rad);
+    const absCos = Math.abs(cosVal);
+    const absSin = Math.abs(sinVal);
+
+    // Half size of the crop viewport
+    const wch = CROP_W_DISPLAY / 2;
+    const hch = CROP_H_DISPLAY / 2;
+
+    // Center of the crop viewport in container coordinates
+    const cropCX = cropLeft + wch;
+    const cropCY = cropTop + hch;
+
+    // Current proposed center of the image relative to crop viewport center
+    const x_c = (newPos.x + dw / 2) - cropCX;
+    const y_c = (newPos.y + dh / 2) - cropCY;
+
+    // Rotate the image center displacement into the image's local coordinate system
+    // (This aligns the image boundaries with the coordinate axes)
+    const localX = x_c * cosVal + y_c * sinVal;
+    const localY = -x_c * sinVal + y_c * cosVal;
+
+    // Compute the half-width and half-height of the crop viewport projected onto the image's local axes
+    const cropWLocalHalf = wch * absCos + hch * absSin;
+    const cropHLocalHalf = wch * absSin + hch * absCos;
+
+    // Clamp the local coordinates so the image covers the projected crop viewport
+    const limitX = Math.max(0, dw / 2 - cropWLocalHalf);
+    const limitY = Math.max(0, dh / 2 - cropHLocalHalf);
+
+    const clampedLocalX = Math.min(limitX, Math.max(-limitX, localX));
+    const clampedLocalY = Math.min(limitY, Math.max(-limitY, localY));
+
+    // Rotate back to container space
+    const clampedXCenterRel = clampedLocalX * cosVal - clampedLocalY * sinVal;
+    const clampedYCenterRel = clampedLocalX * sinVal + clampedLocalY * cosVal;
+
+    // Convert center back to top-left position
+    const clampedX = clampedXCenterRel + cropCX - dw / 2;
+    const clampedY = clampedYCenterRel + cropCY - dh / 2;
+
+    return { x: clampedX, y: clampedY };
   }, [cropLeft, cropTop, CROP_W_DISPLAY, CROP_H_DISPLAY]);
+
+  const getMinScaleForRotation = useCallback((rot) => {
+    if (!imgNatural.w || !imgNatural.h) return 1;
+    const rad = (rot * Math.PI) / 180;
+    const absCos = Math.abs(Math.cos(rad));
+    const absSin = Math.abs(Math.sin(rad));
+
+    const wch = CROP_W_DISPLAY / 2;
+    const hch = CROP_H_DISPLAY / 2;
+
+    // Projected crop box half sizes in image local coordinate system
+    const cropWLocalHalf = wch * absCos + hch * absSin;
+    const cropHLocalHalf = wch * absSin + hch * absCos;
+
+    const minScaleW = (cropWLocalHalf * 2) / imgNatural.w;
+    const minScaleH = (cropHLocalHalf * 2) / imgNatural.h;
+
+    return Math.max(minScaleW, minScaleH) * 1.05;
+  }, [imgNatural, CROP_W_DISPLAY, CROP_H_DISPLAY]);
+
+  useEffect(() => {
+    setRotation(0);
+  }, [imageSrc]);
 
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
       const { naturalWidth: nw, naturalHeight: nh } = img;
-      const baseScale = Math.max(CROP_W_DISPLAY / nw, CROP_H_DISPLAY / nh) * 1.05;
       setImgNatural({ w: nw, h: nh });
+
+      const baseScale = Math.max(CROP_W_DISPLAY / nw, CROP_H_DISPLAY / nh) * 1.05;
       setScale(baseScale);
+
       const dw = nw * baseScale;
       const dh = nh * baseScale;
-      setPos(clamp({ x: (CONTAINER_W - dw) / 2, y: (CONTAINER_H - dh) / 2 }, baseScale, nw, nh));
+      setPos(clamp({ x: (CONTAINER_W - dw) / 2, y: (CONTAINER_H - dw) / 2 }, baseScale, nw, nh, 0));
     };
     img.src = imageSrc;
   }, [imageSrc, clamp]);
@@ -61,29 +126,58 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   const dh = imgNatural.h * scale;
 
   const onMouseDown  = (e) => { e.preventDefault(); dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, ox: pos.x, oy: pos.y }; };
-  const onMouseMove  = (e) => { if (!dragRef.current.active) return; setPos(clamp({ x: dragRef.current.ox + e.clientX - dragRef.current.startX, y: dragRef.current.oy + e.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h)); };
+  const onMouseMove  = (e) => { if (!dragRef.current.active) return; setPos(clamp({ x: dragRef.current.ox + e.clientX - dragRef.current.startX, y: dragRef.current.oy + e.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h, rotation)); };
   const onMouseUp    = () => { dragRef.current.active = false; };
   const onTouchStart = (e) => { const t = e.touches[0]; dragRef.current = { active: true, startX: t.clientX, startY: t.clientY, ox: pos.x, oy: pos.y }; };
-  const onTouchMove  = (e) => { if (!dragRef.current.active) return; const t = e.touches[0]; setPos(clamp({ x: dragRef.current.ox + t.clientX - dragRef.current.startX, y: dragRef.current.oy + t.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h)); };
+  const onTouchMove  = (e) => { if (!dragRef.current.active) return; const t = e.touches[0]; setPos(clamp({ x: dragRef.current.ox + t.clientX - dragRef.current.startX, y: dragRef.current.oy + t.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h, rotation)); };
   const onTouchEnd   = () => { dragRef.current.active = false; };
 
-  const handleZoomChange = (e) => { const s = parseFloat(e.target.value); setScale(s); setPos(prev => clamp(prev, s, imgNatural.w, imgNatural.h)); };
+  const handleZoomChange = (e) => {
+    const s = parseFloat(e.target.value);
+    setScale(s);
+    setPos(prev => clamp(prev, s, imgNatural.w, imgNatural.h, rotation));
+  };
+  
+  const handleRotationChange = (e) => {
+    const rot = parseInt(e.target.value);
+    setRotation(rot);
+    const newMinScale = getMinScaleForRotation(rot);
+    let newScale = scale;
+    if (scale < newMinScale) {
+      newScale = newMinScale;
+      setScale(newScale);
+    }
+    setPos(prev => clamp(prev, newScale, imgNatural.w, imgNatural.h, rot));
+  };
 
   const handleConfirm = () => {
     const img = new Image();
     img.onload = () => {
-      const ratio = imgNatural.w / dw;
       const canvas = document.createElement('canvas');
       canvas.width  = 330;
       canvas.height = 390;
-      canvas.getContext('2d').drawImage(img, (cropLeft - pos.x) * ratio, (cropTop - pos.y) * ratio, CROP_W_DISPLAY * ratio, CROP_H_DISPLAY * ratio, 0, 0, 330, 390);
+      const ctx = canvas.getContext('2d');
+      
+      const canvasScale = 330 / CROP_W_DISPLAY;
+      const drawW = dw * canvasScale;
+      const drawH = dh * canvasScale;
+
+      const cropCX = CONTAINER_W / 2;
+      const cropCY = CONTAINER_H / 2;
+      const cx_rel = (pos.x + dw / 2) - cropCX;
+      const cy_rel = (pos.y + dh / 2) - cropCY;
+
+      ctx.translate(canvas.width / 2 + cx_rel * canvasScale, canvas.height / 2 + cy_rel * canvasScale);
+      ctx.rotate((rotation * Math.PI) / 180);
+      
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
       onConfirm(canvas.toDataURL('image/jpeg', 0.92));
     };
     img.src = imageSrc;
   };
 
-  const minScale = Math.max(CROP_W_DISPLAY / (imgNatural.w || 1), CROP_H_DISPLAY / (imgNatural.h || 1)) * 1.05;
-  const maxScale = minScale * 4;
+  const currentMinScale = getMinScaleForRotation(rotation);
+  const currentMaxScale = currentMinScale * 4;
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:3000, background:'rgba(4,8,20,0.90)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(6px)' }}>
@@ -95,7 +189,7 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
         <div style={{ width:CONTAINER_W, height:CONTAINER_H, position:'relative', overflow:'hidden', background:'#0d1117', borderRadius:10, cursor:'grab', touchAction:'none', margin:'0 auto', userSelect:'none' }}
           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          <img src={imageSrc} alt="crop-source" draggable={false} style={{ position:'absolute', left:pos.x, top:pos.y, width:dw, height:dh, pointerEvents:'none' }} />
+          <img src={imageSrc} alt="crop-source" draggable={false} style={{ position:'absolute', left:pos.x, top:pos.y, width:dw, height:dh, pointerEvents:'none', transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }} />
           <div style={{ position:'absolute', top:0, left:0, right:0, height:cropTop, background:'rgba(0,0,0,0.60)', pointerEvents:'none' }} />
           <div style={{ position:'absolute', bottom:0, left:0, right:0, height:CONTAINER_H-cropTop-CROP_H_DISPLAY, background:'rgba(0,0,0,0.60)', pointerEvents:'none' }} />
           <div style={{ position:'absolute', top:cropTop, left:0, width:cropLeft, height:CROP_H_DISPLAY, background:'rgba(0,0,0,0.60)', pointerEvents:'none' }} />
@@ -108,11 +202,19 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
           ))}
           <div style={{ position:'absolute', bottom:8, left:0, right:0, textAlign:'center', fontSize:10, color:'rgba(255,255,255,0.45)', pointerEvents:'none', fontWeight:600, letterSpacing:'0.5px', textTransform:'uppercase' }}>Drag to reposition</div>
         </div>
-        <div style={{ marginTop:16 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--muted,#888)', marginBottom:6, fontWeight:600 }}>
-            <span>Zoom</span><span>{Math.round((scale/minScale-1)*100+100)}%</span>
+        <div style={{ marginTop:16, display:'flex', flexDirection:'column', gap:12 }}>
+          <div>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--muted,#888)', marginBottom:6, fontWeight:600 }}>
+              <span>Zoom</span><span>{Math.round((scale/currentMinScale)*100)}%</span>
+            </div>
+            <input type="range" min={currentMinScale} max={currentMaxScale} step={0.001} value={scale} onChange={handleZoomChange} style={{ width:'100%', accentColor:'#06b6d4' }} />
           </div>
-          <input type="range" min={minScale} max={maxScale} step={0.001} value={scale} onChange={handleZoomChange} style={{ width:'100%', accentColor:'#06b6d4' }} />
+          <div>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--muted,#888)', marginBottom:6, fontWeight:600 }}>
+              <span>Rotation</span><span>{rotation}°</span>
+            </div>
+            <input type="range" min={0} max={360} step={1} value={rotation} onChange={handleRotationChange} style={{ width:'100%', accentColor:'#06b6d4' }} />
+          </div>
         </div>
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:18 }}>
           <button type="button" onClick={onCancel} style={{ padding:'9px 18px', borderRadius:8, border:'1px solid var(--border,#e2e8f0)', background:'transparent', fontSize:13, fontWeight:700, cursor:'pointer', color:'var(--slate-700)' }}>Cancel</button>
@@ -127,6 +229,7 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
 function PhotoUploader({ value, existingUrl, onChange, notify, label = 'Passport Photo' }) {
   const [dragOver, setDragOver] = useState(false);
   const [cropSrc,  setCropSrc]  = useState(null);
+  const [originalSrc, setOriginalSrc] = useState(null);
   const fileRef = useRef(null);
 
   const validateAndOpenCrop = async (file) => {
@@ -150,7 +253,10 @@ function PhotoUploader({ value, existingUrl, onChange, notify, label = 'Passport
       }
       
       const reader = new FileReader();
-      reader.onload = (e) => setCropSrc(e.target.result);
+      reader.onload = (e) => {
+        setOriginalSrc(e.target.result);
+        setCropSrc(e.target.result);
+      };
       reader.readAsDataURL(file);
     } catch (err) {
       notify('❌ Failed to validate file signature.', 'err');
@@ -170,9 +276,11 @@ function PhotoUploader({ value, existingUrl, onChange, notify, label = 'Passport
               {value ? '✅ Cropped photo ready' : '📁 Existing photo'}
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button type="button" onClick={() => setCropSrc(originalSrc || previewSrc)} style={{ fontSize:11, fontWeight:700, color:'#0891b2', background:'none', border:'none', cursor:'pointer', padding:0 }}>✂️ Edit / Recrop</button>
+              <span style={{ color:'#cbd5e1', fontSize:11 }}>|</span>
               <button type="button" onClick={() => fileRef.current?.click()} style={{ fontSize:11, fontWeight:700, color:'#0891b2', background:'none', border:'none', cursor:'pointer', padding:0 }}>✏️ Replace</button>
               <span style={{ color:'#cbd5e1', fontSize:11 }}>|</span>
-              <button type="button" onClick={() => onChange(null)} style={{ fontSize:11, fontWeight:700, color:'#ef4444', background:'none', border:'none', cursor:'pointer', padding:0 }}>🗑 Remove</button>
+              <button type="button" onClick={() => { onChange(null); setOriginalSrc(null); }} style={{ fontSize:11, fontWeight:700, color:'#ef4444', background:'none', border:'none', cursor:'pointer', padding:0 }}>🗑 Remove</button>
             </div>
           </div>
         </div>
@@ -223,6 +331,10 @@ export default function AdminDashboard() {
   const [iStart,  setIStart]  = useState('');
   const [iEnd,    setIEnd]    = useState('');
   const [iPhoto,  setIPhoto]  = useState(null);
+  const [iCollegeName, setICollegeName] = useState('');
+  const [iCollegeCity, setICollegeCity] = useState('');
+  const [iDepartment,  setIDepartment]  = useState('');
+  const [iYear,        setIYear]        = useState('I');
 
   /* Edit modal */
   const [isEditOpen,  setIsEditOpen]  = useState(false);
@@ -266,8 +378,9 @@ export default function AdminDashboard() {
   const filteredCerts = approvedCerts.filter(c => {
     const matchesSearch = (c.student_name || '').toLowerCase().includes(search.toLowerCase()) ||
                           (c.cert_no      || '').toLowerCase().includes(search.toLowerCase()) ||
-                          (c.domain       || '').toLowerCase().includes(search.toLowerCase());
-                          
+                          (c.domain       || '').toLowerCase().includes(search.toLowerCase()) ||
+                          (c.college_name || '').toLowerCase().includes(search.toLowerCase());
+                           
     const matchesProgram = filterProgram === 'all' || c.program_type === filterProgram;
     
     const isHidden = c.is_hidden === null || c.is_hidden === undefined
@@ -283,6 +396,7 @@ export default function AdminDashboard() {
   const filteredRequests = pendingRequests.filter(c =>
     (c.student_name || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.domain       || '').toLowerCase().includes(search.toLowerCase()) ||
+    (c.college_name || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.mobile       || '').includes(search)
   );
 
@@ -332,11 +446,16 @@ export default function AdminDashboard() {
       program_type: iType, domain: iDomain,
       start_date: iStart, end_date: iEnd, photo_url: photoUrl,
       is_hidden: null,
+      college_name: iCollegeName.trim(),
+      college_city: iCollegeCity.trim(),
+      department: iDepartment.trim(),
+      year: iYear,
     }]);
     if (error) showToast('❌ Issue failed — serial conflict detected.', 'err');
     else {
       showToast('✅ Certificate issued successfully.', 'ok');
       setIName(''); setIMobile(''); setIDomain(''); setIStart(''); setIEnd(''); setIPhoto(null); setICertNo('');
+      setICollegeName(''); setICollegeCity(''); setIDepartment(''); setIYear('I');
       loadData(); setActiveTab('all');
     }
   };
@@ -352,6 +471,10 @@ export default function AdminDashboard() {
       domain:       cert.domain       ?? '',
       start_date:   cert.start_date   ?? '',
       end_date:     cert.end_date     ?? '',
+      college_name: cert.college_name ?? '',
+      college_city: cert.college_city ?? '',
+      department:   cert.department   ?? '',
+      year:         cert.year         ?? 'I',
     });
     setEPhoto(undefined);                        
     setIsEditOpen(true);
@@ -434,6 +557,10 @@ export default function AdminDashboard() {
       domain: record.domain ?? '',
       start_date: record.start_date ?? '',
       end_date: record.end_date ?? '',
+      college_name: record.college_name ?? '',
+      college_city: record.college_city ?? '',
+      department: record.department ?? '',
+      year: record.year ?? 'I',
     });
     setEPhoto(undefined);
     setRequestActionRecord(record);
@@ -459,6 +586,10 @@ export default function AdminDashboard() {
       end_date: editFields.end_date,
       photo_url: finalPhoto,
       is_hidden: null,
+      college_name: (editFields.college_name || '').trim(),
+      college_city: (editFields.college_city || '').trim(),
+      department: (editFields.department || '').trim(),
+      year: editFields.year || 'I',
     };
 
     const { error } = await supabase
@@ -720,7 +851,14 @@ export default function AdminDashboard() {
                             <span className="mono" style={{ opacity: (c.is_hidden === null || c.is_hidden === undefined ? (c.end_date && c.end_date > todayStr) : c.is_hidden) ? 0.45 : 1 }}>{c.cert_no}</span>
                             {(c.is_hidden === null || c.is_hidden === undefined ? (c.end_date && c.end_date > todayStr) : c.is_hidden) && <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--slate-100)', color: 'var(--slate-600)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>HIDDEN</span>}
                           </td>
-                          <td><strong style={{ fontSize:'13.5px', opacity: (c.is_hidden === null || c.is_hidden === undefined ? (c.end_date && c.end_date > todayStr) : c.is_hidden) ? 0.6 : 1 }}>{c.student_name}</strong></td>
+                          <td>
+                            <strong style={{ fontSize:'13.5px', opacity: (c.is_hidden === null || c.is_hidden === undefined ? (c.end_date && c.end_date > todayStr) : c.is_hidden) ? 0.6 : 1 }}>{c.student_name}</strong>
+                            {c.college_name && (
+                              <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span>🎓</span> {c.college_name}
+                              </div>
+                            )}
+                          </td>
                           <td><span className={`badge ${c.program_type==='Internship'?'b-intern':'b-training'}`}>{c.program_type}</span></td>
                           <td style={{ color:'var(--slate-700)', fontWeight:600 }}>{c.domain}</td>
                           <td style={{ fontSize:'12px', color:'var(--muted)', whiteSpace:'nowrap' }}>{formatDate(c.start_date)} – {formatDate(c.end_date)}</td>
@@ -802,6 +940,28 @@ export default function AdminDashboard() {
                 <div className="igroup">
                   <label>End Date</label>
                   <input type="date" value={iEnd} onChange={e=>setIEnd(e.target.value)} required />
+                </div>
+                <div className="igroup">
+                  <label>College Name</label>
+                  <input type="text" placeholder="e.g., Harvard University" value={iCollegeName} onChange={e=>setICollegeName(e.target.value)} />
+                </div>
+                <div className="igroup">
+                  <label>College City</label>
+                  <input type="text" placeholder="e.g., Cambridge" value={iCollegeCity} onChange={e=>setICollegeCity(e.target.value)} />
+                </div>
+                <div className="igroup">
+                  <label>Department</label>
+                  <input type="text" placeholder="e.g., Computer Science" value={iDepartment} onChange={e=>setIDepartment(e.target.value)} />
+                </div>
+                <div className="igroup">
+                  <label>Year</label>
+                  <select value={iYear} onChange={e=>setIYear(e.target.value)}>
+                    <option value="I">I Year</option>
+                    <option value="II">II Year</option>
+                    <option value="III">III Year</option>
+                    <option value="IV">IV Year</option>
+                    <option value="Passed Out">Passed Out</option>
+                  </select>
                 </div>
                 <PhotoUploader value={iPhoto} onChange={setIPhoto} notify={showToast} label="Passport Photo" />
                 <div className="f-full">
@@ -919,6 +1079,28 @@ export default function AdminDashboard() {
               <label>End Date</label>
               <input type="date" value={editFields.end_date ?? ''} onChange={e=>setEditFields(p=>({...p,end_date:e.target.value}))} required />
             </div>
+            <div className="igroup">
+              <label>College Name</label>
+              <input type="text" value={editFields.college_name ?? ''} onChange={e=>setEditFields(p=>({...p,college_name:e.target.value}))} />
+            </div>
+            <div className="igroup">
+              <label>College City</label>
+              <input type="text" value={editFields.college_city ?? ''} onChange={e=>setEditFields(p=>({...p,college_city:e.target.value}))} />
+            </div>
+            <div className="igroup">
+              <label>Department</label>
+              <input type="text" value={editFields.department ?? ''} onChange={e=>setEditFields(p=>({...p,department:e.target.value}))} />
+            </div>
+            <div className="igroup">
+              <label>Year</label>
+              <select value={editFields.year ?? 'I'} onChange={e=>setEditFields(p=>({...p,year:e.target.value}))}>
+                <option value="I">I Year</option>
+                <option value="II">II Year</option>
+                <option value="III">III Year</option>
+                <option value="IV">IV Year</option>
+                <option value="Passed Out">Passed Out</option>
+              </select>
+            </div>
             <PhotoUploader
               value={ePhoto === undefined ? null : ePhoto}
               existingUrl={ePhoto === undefined ? (editRecord?.photo_url ?? null) : undefined}
@@ -973,6 +1155,28 @@ export default function AdminDashboard() {
             <div className="igroup">
               <label>End Date</label>
               <input type="date" value={editFields.end_date ?? ''} onChange={e=>setEditFields(p=>({...p,end_date:e.target.value}))} required />
+            </div>
+            <div className="igroup">
+              <label>College Name</label>
+              <input type="text" value={editFields.college_name ?? ''} onChange={e=>setEditFields(p=>({...p,college_name:e.target.value}))} />
+            </div>
+            <div className="igroup">
+              <label>College City</label>
+              <input type="text" value={editFields.college_city ?? ''} onChange={e=>setEditFields(p=>({...p,college_city:e.target.value}))} />
+            </div>
+            <div className="igroup">
+              <label>Department</label>
+              <input type="text" value={editFields.department ?? ''} onChange={e=>setEditFields(p=>({...p,department:e.target.value}))} />
+            </div>
+            <div className="igroup">
+              <label>Year</label>
+              <select value={editFields.year ?? 'I'} onChange={e=>setEditFields(p=>({...p,year:e.target.value}))}>
+                <option value="I">I Year</option>
+                <option value="II">II Year</option>
+                <option value="III">III Year</option>
+                <option value="IV">IV Year</option>
+                <option value="Passed Out">Passed Out</option>
+              </select>
             </div>
             <PhotoUploader
               value={ePhoto === undefined ? null : ePhoto}

@@ -17,6 +17,7 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   const CROP_W_DISPLAY = 170;
   const CROP_H_DISPLAY = Math.round(170 * (195 / 165));
 
+  const [rotation, setRotation] = useState(0);
   const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 });
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -25,25 +26,89 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   const cropLeft = (CONTAINER_W - CROP_W_DISPLAY) / 2;
   const cropTop = (CONTAINER_H - CROP_H_DISPLAY) / 2;
 
-  const clamp = useCallback((newPos, s, iw, ih) => {
+  const clamp = useCallback((newPos, s, iw, ih, rot = 0) => {
     const dw = iw * s;
     const dh = ih * s;
-    return {
-      x: Math.min(cropLeft, Math.max(cropLeft + CROP_W_DISPLAY - dw, newPos.x)),
-      y: Math.min(cropTop, Math.max(cropTop + CROP_H_DISPLAY - dh, newPos.y)),
-    };
+    const rad = (rot * Math.PI) / 180;
+    const cosVal = Math.cos(rad);
+    const sinVal = Math.sin(rad);
+    const absCos = Math.abs(cosVal);
+    const absSin = Math.abs(sinVal);
+
+    // Half size of the crop viewport
+    const wch = CROP_W_DISPLAY / 2;
+    const hch = CROP_H_DISPLAY / 2;
+
+    // Center of the crop viewport in container coordinates
+    const cropCX = cropLeft + wch;
+    const cropCY = cropTop + hch;
+
+    // Current proposed center of the image relative to crop viewport center
+    const x_c = (newPos.x + dw / 2) - cropCX;
+    const y_c = (newPos.y + dh / 2) - cropCY;
+
+    // Rotate the image center displacement into the image's local coordinate system
+    // (This aligns the image boundaries with the coordinate axes)
+    const localX = x_c * cosVal + y_c * sinVal;
+    const localY = -x_c * sinVal + y_c * cosVal;
+
+    // Compute the half-width and half-height of the crop viewport projected onto the image's local axes
+    const cropWLocalHalf = wch * absCos + hch * absSin;
+    const cropHLocalHalf = wch * absSin + hch * absCos;
+
+    // Clamp the local coordinates so the image covers the projected crop viewport
+    const limitX = Math.max(0, dw / 2 - cropWLocalHalf);
+    const limitY = Math.max(0, dh / 2 - cropHLocalHalf);
+
+    const clampedLocalX = Math.min(limitX, Math.max(-limitX, localX));
+    const clampedLocalY = Math.min(limitY, Math.max(-limitY, localY));
+
+    // Rotate back to container space
+    const clampedXCenterRel = clampedLocalX * cosVal - clampedLocalY * sinVal;
+    const clampedYCenterRel = clampedLocalX * sinVal + clampedLocalY * cosVal;
+
+    // Convert center back to top-left position
+    const clampedX = clampedXCenterRel + cropCX - dw / 2;
+    const clampedY = clampedYCenterRel + cropCY - dh / 2;
+
+    return { x: clampedX, y: clampedY };
   }, [cropLeft, cropTop, CROP_W_DISPLAY, CROP_H_DISPLAY]);
+
+  const getMinScaleForRotation = useCallback((rot) => {
+    if (!imgNatural.w || !imgNatural.h) return 1;
+    const rad = (rot * Math.PI) / 180;
+    const absCos = Math.abs(Math.cos(rad));
+    const absSin = Math.abs(Math.sin(rad));
+
+    const wch = CROP_W_DISPLAY / 2;
+    const hch = CROP_H_DISPLAY / 2;
+
+    // Projected crop box half sizes in image local coordinate system
+    const cropWLocalHalf = wch * absCos + hch * absSin;
+    const cropHLocalHalf = wch * absSin + hch * absCos;
+
+    const minScaleW = (cropWLocalHalf * 2) / imgNatural.w;
+    const minScaleH = (cropHLocalHalf * 2) / imgNatural.h;
+
+    return Math.max(minScaleW, minScaleH) * 1.05;
+  }, [imgNatural, CROP_W_DISPLAY, CROP_H_DISPLAY]);
+
+  useEffect(() => {
+    setRotation(0);
+  }, [imageSrc]);
 
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
       const { naturalWidth: nw, naturalHeight: nh } = img;
-      const baseScale = Math.max(CROP_W_DISPLAY / nw, CROP_H_DISPLAY / nh) * 1.05;
       setImgNatural({ w: nw, h: nh });
+
+      const baseScale = Math.max(CROP_W_DISPLAY / nw, CROP_H_DISPLAY / nh) * 1.05;
       setScale(baseScale);
+
       const dw = nw * baseScale;
       const dh = nh * baseScale;
-      setPos(clamp({ x: (CONTAINER_W - dw) / 2, y: (CONTAINER_H - dh) / 2 }, baseScale, nw, nh));
+      setPos(clamp({ x: (CONTAINER_W - dw) / 2, y: (CONTAINER_H - dh) / 2 }, baseScale, nw, nh, 0));
     };
     img.src = imageSrc;
   }, [imageSrc, clamp]);
@@ -52,29 +117,58 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   const dh = imgNatural.h * scale;
 
   const onMouseDown = (e) => { e.preventDefault(); dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, ox: pos.x, oy: pos.y }; };
-  const onMouseMove = (e) => { if (!dragRef.current.active) return; setPos(clamp({ x: dragRef.current.ox + e.clientX - dragRef.current.startX, y: dragRef.current.oy + e.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h)); };
+  const onMouseMove = (e) => { if (!dragRef.current.active) return; setPos(clamp({ x: dragRef.current.ox + e.clientX - dragRef.current.startX, y: dragRef.current.oy + e.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h, rotation)); };
   const onMouseUp = () => { dragRef.current.active = false; };
   const onTouchStart = (e) => { const t = e.touches[0]; dragRef.current = { active: true, startX: t.clientX, startY: t.clientY, ox: pos.x, oy: pos.y }; };
-  const onTouchMove = (e) => { if (!dragRef.current.active) return; const t = e.touches[0]; setPos(clamp({ x: dragRef.current.ox + t.clientX - dragRef.current.startX, y: dragRef.current.oy + t.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h)); };
+  const onTouchMove = (e) => { if (!dragRef.current.active) return; const t = e.touches[0]; setPos(clamp({ x: dragRef.current.ox + t.clientX - dragRef.current.startX, y: dragRef.current.oy + t.clientY - dragRef.current.startY }, scale, imgNatural.w, imgNatural.h, rotation)); };
   const onTouchEnd = () => { dragRef.current.active = false; };
 
-  const handleZoomChange = (e) => { const s = parseFloat(e.target.value); setScale(s); setPos(prev => clamp(prev, s, imgNatural.w, imgNatural.h)); };
+  const handleZoomChange = (e) => {
+    const s = parseFloat(e.target.value);
+    setScale(s);
+    setPos(prev => clamp(prev, s, imgNatural.w, imgNatural.h, rotation));
+  };
+
+  const handleRotationChange = (e) => {
+    const rot = parseInt(e.target.value);
+    setRotation(rot);
+    const newMinScale = getMinScaleForRotation(rot);
+    let newScale = scale;
+    if (scale < newMinScale) {
+      newScale = newMinScale;
+      setScale(newScale);
+    }
+    setPos(prev => clamp(prev, newScale, imgNatural.w, imgNatural.h, rot));
+  };
 
   const handleConfirm = () => {
     const img = new Image();
     img.onload = () => {
-      const ratio = imgNatural.w / dw;
       const canvas = document.createElement('canvas');
       canvas.width = 330;
       canvas.height = 390;
-      canvas.getContext('2d').drawImage(img, (cropLeft - pos.x) * ratio, (cropTop - pos.y) * ratio, CROP_W_DISPLAY * ratio, CROP_H_DISPLAY * ratio, 0, 0, 330, 390);
+      const ctx = canvas.getContext('2d');
+      
+      const canvasScale = 330 / CROP_W_DISPLAY;
+      const drawW = dw * canvasScale;
+      const drawH = dh * canvasScale;
+
+      const cropCX = CONTAINER_W / 2;
+      const cropCY = CONTAINER_H / 2;
+      const cx_rel = (pos.x + dw / 2) - cropCX;
+      const cy_rel = (pos.y + dh / 2) - cropCY;
+
+      ctx.translate(canvas.width / 2 + cx_rel * canvasScale, canvas.height / 2 + cy_rel * canvasScale);
+      ctx.rotate((rotation * Math.PI) / 180);
+      
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
       onConfirm(canvas.toDataURL('image/jpeg', 0.92));
     };
     img.src = imageSrc;
   };
 
-  const minScale = Math.max(CROP_W_DISPLAY / (imgNatural.w || 1), CROP_H_DISPLAY / (imgNatural.h || 1)) * 1.05;
-  const maxScale = minScale * 4;
+  const currentMinScale = getMinScaleForRotation(rotation);
+  const currentMaxScale = currentMinScale * 4;
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(4,8,15,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '16px' }}>
@@ -86,7 +180,7 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
         <div style={{ width: CONTAINER_W, height: CONTAINER_H, position: 'relative', overflow: 'hidden', background: '#05080f', borderRadius: 12, cursor: 'grab', touchAction: 'none', margin: '0 auto', userSelect: 'none', border: '1px solid rgba(255,255,255,0.05)' }}
           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          <img src={imageSrc} alt="crop-source" draggable={false} style={{ position: 'absolute', left: pos.x, top: pos.y, width: dw, height: dh, pointerEvents: 'none' }} />
+          <img src={imageSrc} alt="crop-source" draggable={false} style={{ position: 'absolute', left: pos.x, top: pos.y, width: dw, height: dh, pointerEvents: 'none', transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }} />
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: cropTop, background: 'rgba(4,8,15,0.70)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: CONTAINER_H - cropTop - CROP_H_DISPLAY, background: 'rgba(4,8,15,0.70)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', top: cropTop, left: 0, width: cropLeft, height: CROP_H_DISPLAY, background: 'rgba(4,8,15,0.70)', pointerEvents: 'none' }} />
@@ -99,11 +193,19 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
           ))}
           <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.4)', pointerEvents: 'none', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Drag to reposition</div>
         </div>
-        <div style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted,#94a3b8)', marginBottom: 6, fontWeight: 600 }}>
-            <span>Zoom Matrix</span><span>{Math.round((scale / minScale - 1) * 100 + 100)}%</span>
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted,#94a3b8)', marginBottom: 6, fontWeight: 600 }}>
+              <span>Zoom Matrix</span><span>{Math.round((scale / currentMinScale) * 100)}%</span>
+            </div>
+            <input type="range" min={currentMinScale} max={currentMaxScale} step={0.001} value={scale} onChange={handleZoomChange} style={{ width: '100%', accentColor: 'var(--cyan-500)' }} />
           </div>
-          <input type="range" min={minScale} max={maxScale} step={0.001} value={scale} onChange={handleZoomChange} style={{ width: '100%', accentColor: 'var(--cyan-500)' }} />
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted,#94a3b8)', marginBottom: 6, fontWeight: 600 }}>
+              <span>Rotation</span><span>{rotation}°</span>
+            </div>
+            <input type="range" min={0} max={360} step={1} value={rotation} onChange={handleRotationChange} style={{ width: '100%', accentColor: 'var(--cyan-500)' }} />
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
           <button type="button" onClick={onCancel} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border-line,#1e293b)', background: 'transparent', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--text-muted)' }}>Cancel</button>
@@ -118,6 +220,7 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
 function PhotoUploader({ value, onChange, notify, label = 'Passport Photo' }) {
   const [dragOver, setDragOver] = useState(false);
   const [cropSrc, setCropSrc] = useState(null);
+  const [originalSrc, setOriginalSrc] = useState(null);
   const fileRef = useRef(null);
 
   const validateAndOpenCrop = async (file) => {
@@ -141,7 +244,10 @@ function PhotoUploader({ value, onChange, notify, label = 'Passport Photo' }) {
       }
       
       const reader = new FileReader();
-      reader.onload = (e) => setCropSrc(e.target.result);
+      reader.onload = (e) => {
+        setOriginalSrc(e.target.result);
+        setCropSrc(e.target.result);
+      };
       reader.readAsDataURL(file);
     } catch (err) {
       notify('❌ Failed to validate file signature.', 'err');
@@ -157,10 +263,11 @@ function PhotoUploader({ value, onChange, notify, label = 'Passport Photo' }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate-700)', marginBottom: 3 }}>✅ Passport crop generated</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" onClick={() => setCropSrc(originalSrc || value)} style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan-600)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>✂️ Edit / Recrop</button>
+              <span style={{ color: '#cbd5e1', fontSize: 11 }}>|</span>
               <button type="button" onClick={() => fileRef.current?.click()} style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan-600)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>✏️ Replace</button>
               <span style={{ color: '#cbd5e1', fontSize: 11 }}>|</span>
-              {/* Fixed Syntax: Cleared out broken token typo configurations */}
-              <button type="button" onClick={() => onChange(null)} style={{ fontSize: 11, fontWeight: 700, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>🗑 Remove</button>
+              <button type="button" onClick={() => { onChange(null); setOriginalSrc(null); }} style={{ fontSize: 11, fontWeight: 700, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>🗑 Remove</button>
             </div>
           </div>
         </div>

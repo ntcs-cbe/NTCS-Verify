@@ -294,6 +294,30 @@ function PhotoUploader({ value, onChange, notify, label = 'Passport Photo' }) {
 }
 
 /* ─── Main Request Component ───────────────────────────────────────────── */
+const DOMAIN_OPTIONS = [
+  'Artificial Intelligence',
+  'App Development',
+  'Artificial Intelligence and Machine Learning',
+  'Data Science',
+  'Data Analytics',
+  'Web Development',
+  'Full Stack',
+  'UI / UX',
+  'Embedded System',
+  'Internet of Things',
+  'Raspberry Pi',
+  'Arduino',
+  'VLSI Design',
+  'PCB Design',
+  'Deep Learning',
+  'Gen AI',
+  'Machine Learning',
+  'Cloud Computing',
+  'Cyber Security',
+  'Digital Marketing',
+  'other (to enter)'
+];
+
 export default function Request() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -302,7 +326,8 @@ export default function Request() {
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
   const [programType, setProgramType] = useState('Internship');
-  const [domain, setDomain] = useState('');
+  const [selectedDomain, setSelectedDomain] = useState('');
+  const [customDomain, setCustomDomain] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [photo, setPhoto] = useState(null);
@@ -321,7 +346,11 @@ export default function Request() {
     if (!photo) { showToast('❌ Identity portrait verification photo is required.', 'err'); return; }
     if (!mobile || mobile.replace(/\D/g, '').length < 10) { showToast('❌ Enter a valid 10-digit mobile number.', 'err'); return; }
     if (!/^[a-zA-Z\s\.]+$/.test(name.trim())) { showToast('❌ Name contains invalid characters. Only letters are allowed.', 'err'); return; }
-    if (!/^[a-zA-Z0-9\s\.\-\(\)]+$/.test(domain.trim())) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+
+    const finalDomain = (selectedDomain === 'other (to enter)' ? customDomain : selectedDomain).trim();
+    if (!finalDomain) { showToast('❌ Domain selection is required.', 'err'); return; }
+    if (!/^[a-zA-Z0-9\s\.\-\(\)\/]+$/.test(finalDomain)) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+
     if (!collegeName.trim()) { showToast('❌ College Name is required.', 'err'); return; }
     if (!department.trim()) { showToast('❌ Department is required.', 'err'); return; }
     if (!collegeCity.trim()) { showToast('❌ College City is required.', 'err'); return; }
@@ -350,7 +379,7 @@ export default function Request() {
         student_name: name.toUpperCase().trim(),
         mobile: mobile.trim(),
         program_type: programType,
-        domain: domain.trim(),
+        domain: finalDomain,
         start_date: startDate,
         end_date: endDate,
         photo_url: photo,
@@ -367,7 +396,7 @@ export default function Request() {
         showToast('Submission rejected. Cloud schema deployment fault.', 'err');
       } else {
         showToast('🎉 Application successfully submitted to active logs!', 'ok');
-        setName(''); setMobile(''); setDomain(''); setStartDate(''); setEndDate(''); setPhoto(null);
+        setName(''); setMobile(''); setSelectedDomain(''); setCustomDomain(''); setStartDate(''); setEndDate(''); setPhoto(null);
         setCollegeName(''); setDepartment(''); setYear('I'); setCollegeCity('');
         setTimeout(() => navigate('/'), 2000);
       }
@@ -467,11 +496,32 @@ export default function Request() {
 
             <div className="igroup f-full">
               <label className="verify-style-label">Domain Field</label>
-              <input
-                type="text" className="verify-style-input" placeholder="e.g., Deep Learning / Embedded Systems"
-                value={domain} onChange={e => setDomain(e.target.value)} required
-              />
+              <select
+                className="verify-style-input verify-style-select"
+                value={selectedDomain}
+                onChange={e => setSelectedDomain(e.target.value)}
+                required
+              >
+                <option value="" disabled>-- SELECT DOMAIN --</option>
+                {DOMAIN_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
+
+            {selectedDomain === 'other (to enter)' && (
+              <div className="igroup f-full">
+                <label className="verify-style-label">Custom Domain Name</label>
+                <input
+                  type="text"
+                  className="verify-style-input"
+                  placeholder="Enter custom domain name (e.g., Quantum Computing)"
+                  value={customDomain}
+                  onChange={e => setCustomDomain(e.target.value)}
+                  required
+                />
+              </div>
+            )}
 
             <div className="igroup">
               <label className="verify-style-label">Start Date</label>

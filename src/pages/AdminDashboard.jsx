@@ -307,6 +307,30 @@ function PhotoUploader({ value, existingUrl, onChange, notify, label = 'Passport
 }
 
 /* ─── Main Component ──────────────────────────────────────────────────── */
+const DOMAIN_OPTIONS = [
+  'Artificial Intelligence',
+  'App Development',
+  'Artificial Intelligence and Machine Learning',
+  'Data Science',
+  'Data Analytics',
+  'Web Development',
+  'Full Stack',
+  'UI / UX',
+  'Embedded System',
+  'Internet of Things',
+  'Raspberry Pi',
+  'Arduino',
+  'VLSI Design',
+  'PCB Design',
+  'Deep Learning',
+  'Gen AI',
+  'Machine Learning',
+  'Cloud Computing',
+  'Cyber Security',
+  'Digital Marketing',
+  'other (to enter)'
+];
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const todayStr = new Date().toLocaleDateString('en-CA');
@@ -327,7 +351,8 @@ export default function AdminDashboard() {
   const [iMobile, setIMobile] = useState('');
   const [iName,   setIName]   = useState('');
   const [iType,   setIType]   = useState('Internship');
-  const [iDomain, setIDomain] = useState('');
+  const [selectedIDomain, setSelectedIDomain] = useState('');
+  const [customIDomain, setCustomIDomain] = useState('');
   const [iStart,  setIStart]  = useState('');
   const [iEnd,    setIEnd]    = useState('');
   const [iPhoto,  setIPhoto]  = useState(null);
@@ -335,6 +360,10 @@ export default function AdminDashboard() {
   const [iCollegeCity, setICollegeCity] = useState('');
   const [iDepartment,  setIDepartment]  = useState('');
   const [iYear,        setIYear]        = useState('I');
+
+  /* Edit & Approve domain states */
+  const [selectedEDomain, setSelectedEDomain] = useState('');
+  const [customEDomain, setCustomEDomain] = useState('');
 
   /* Edit modal */
   const [isEditOpen,  setIsEditOpen]  = useState(false);
@@ -436,14 +465,18 @@ export default function AdminDashboard() {
     if (!iCertNo || !/^NTCS/.test(iCertNo))                   { showToast('❌ Invalid certificate number.', 'err'); return; }
     if (!iMobile || iMobile.replace(/\D/g,'').length < 10)    { showToast('❌ Enter a valid 10-digit mobile number.', 'err'); return; }
     if (!/^[a-zA-Z\s\.]+$/.test(iName.trim()))                { showToast('❌ Name contains invalid characters. Only letters are allowed.', 'err'); return; }
-    if (!/^[a-zA-Z0-9\s\.\-\(\)]+$/.test(iDomain.trim()))     { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+    
+    const finalDomain = (selectedIDomain === 'other (to enter)' ? customIDomain : selectedIDomain).trim();
+    if (!finalDomain) { showToast('❌ Domain selection is required.', 'err'); return; }
+    if (!/^[a-zA-Z0-9\s\.\-\(\)\/]+$/.test(finalDomain)) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+    
     if (new Date(iStart) > new Date(iEnd))                     { showToast('❌ Start date cannot be after end date.', 'err'); return; }
     const photoUrl = iPhoto || '';
     if (photoUrl && photoUrl.length > 600_000)                 { showToast('❌ Cropped photo too large.', 'err'); return; }
 
     const { error } = await supabase.from('certificates').insert([{
       cert_no: iCertNo, mobile: iMobile, student_name: iName,
-      program_type: iType, domain: iDomain,
+      program_type: iType, domain: finalDomain,
       start_date: iStart, end_date: iEnd, photo_url: photoUrl,
       is_hidden: null,
       college_name: iCollegeName.trim(),
@@ -454,7 +487,7 @@ export default function AdminDashboard() {
     if (error) showToast('❌ Issue failed — serial conflict detected.', 'err');
     else {
       showToast('✅ Certificate issued successfully.', 'ok');
-      setIName(''); setIMobile(''); setIDomain(''); setIStart(''); setIEnd(''); setIPhoto(null); setICertNo('');
+      setIName(''); setIMobile(''); setSelectedIDomain(''); setCustomIDomain(''); setIStart(''); setIEnd(''); setIPhoto(null); setICertNo('');
       setICollegeName(''); setICollegeCity(''); setIDepartment(''); setIYear('I');
       loadData(); setActiveTab('all');
     }
@@ -476,11 +509,24 @@ export default function AdminDashboard() {
       department:   cert.department   ?? '',
       year:         cert.year         ?? 'I',
     });
-    setEPhoto(undefined);                        
+    setEPhoto(undefined);
+
+    const certDomain = cert.domain ?? '';
+    const isPredefined = DOMAIN_OPTIONS.includes(certDomain);
+    setSelectedEDomain(isPredefined ? certDomain : (certDomain ? 'other (to enter)' : ''));
+    setCustomEDomain(isPredefined ? '' : certDomain);
+
     setIsEditOpen(true);
   };
 
-  const closeEdit = () => { setIsEditOpen(false); setEditRecord(null); setEditFields({}); setEPhoto(undefined); };
+  const closeEdit = () => {
+    setIsEditOpen(false);
+    setEditRecord(null);
+    setEditFields({});
+    setEPhoto(undefined);
+    setSelectedEDomain('');
+    setCustomEDomain('');
+  };
 
   const handleEditSave = async (e) => {
     e.preventDefault();
@@ -488,7 +534,10 @@ export default function AdminDashboard() {
     if (!editFields.cert_no || (!/^NTCS/.test(editFields.cert_no) && !editFields.cert_no.startsWith('PENDING/'))) { showToast('❌ Invalid certificate configuration structure.', 'err'); return; }
     if (!editFields.mobile || editFields.mobile.replace(/\D/g,'').length < 10) { showToast('❌ Enter a valid 10-digit mobile number.', 'err'); return; }
     if (!/^[a-zA-Z\s\.]+$/.test(editFields.student_name.trim())) { showToast('❌ Name contains invalid characters. Only letters are allowed.', 'err'); return; }
-    if (!/^[a-zA-Z0-9\s\.\-\(\)]+$/.test(editFields.domain.trim())) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+
+    const finalDomain = (selectedEDomain === 'other (to enter)' ? customEDomain : selectedEDomain).trim();
+    if (!finalDomain) { showToast('❌ Domain selection is required.', 'err'); return; }
+    if (!/^[a-zA-Z0-9\s\.\-\(\)\/]+$/.test(finalDomain)) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
 
     const resolvedPhoto =
       ePhoto === undefined ? (editRecord.photo_url ?? '')
@@ -497,6 +546,7 @@ export default function AdminDashboard() {
 
     const payload = {
       ...editFields,
+      domain: finalDomain,
       photo_url: resolvedPhoto,
       is_hidden: editRecord.end_date === editFields.end_date ? editRecord.is_hidden : null,
     };
@@ -549,6 +599,12 @@ export default function AdminDashboard() {
   const openAcceptModal = (record) => {
     const generatedNo = calculateNextCertNo(record.program_type);
     setICertNo(generatedNo);
+
+    const recordDomain = record.domain ?? '';
+    const isPredefined = DOMAIN_OPTIONS.includes(recordDomain);
+    setSelectedEDomain(isPredefined ? recordDomain : (recordDomain ? 'other (to enter)' : ''));
+    setCustomEDomain(isPredefined ? '' : recordDomain);
+
     setEditFields({
       cert_no: generatedNo,
       mobile: record.mobile ?? '',
@@ -572,7 +628,10 @@ export default function AdminDashboard() {
     if (!requestActionRecord) return;
     if (!editFields.cert_no || !/^NTCS/.test(editFields.cert_no)) { showToast('❌ Invalid certificate layout token.', 'err'); return; }
     if (!/^[a-zA-Z\s\.]+$/.test(editFields.student_name.trim())) { showToast('❌ Name contains invalid characters. Only letters are allowed.', 'err'); return; }
-    if (!/^[a-zA-Z0-9\s\.\-\(\)]+$/.test(editFields.domain.trim())) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
+
+    const finalDomain = (selectedEDomain === 'other (to enter)' ? customEDomain : selectedEDomain).trim();
+    if (!finalDomain) { showToast('❌ Domain selection is required.', 'err'); return; }
+    if (!/^[a-zA-Z0-9\s\.\-\(\)\/]+$/.test(finalDomain)) { showToast('❌ Domain contains invalid characters.', 'err'); return; }
 
     const finalPhoto = ePhoto === undefined ? (requestActionRecord.photo_url ?? '') : (ePhoto ?? '');
 
@@ -581,7 +640,7 @@ export default function AdminDashboard() {
       mobile: editFields.mobile,
       student_name: editFields.student_name,
       program_type: editFields.program_type,
-      domain: editFields.domain,
+      domain: finalDomain,
       start_date: editFields.start_date,
       end_date: editFields.end_date,
       photo_url: finalPhoto,
@@ -931,8 +990,19 @@ export default function AdminDashboard() {
                 </div>
                 <div className="igroup">
                   <label>Domain / Specialization</label>
-                  <input type="text" placeholder="e.g., Web Development" value={iDomain} onChange={e=>setIDomain(e.target.value)} required />
+                  <select value={selectedIDomain} onChange={e => setSelectedIDomain(e.target.value)} required>
+                    <option value="" disabled>-- SELECT DOMAIN --</option>
+                    {DOMAIN_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
                 </div>
+                {selectedIDomain === 'other (to enter)' && (
+                  <div className="igroup f-full">
+                    <label>Custom Domain Name</label>
+                    <input type="text" placeholder="Enter custom domain name" value={customIDomain} onChange={e => setCustomIDomain(e.target.value)} required />
+                  </div>
+                )}
                 <div className="igroup">
                   <label>Start Date</label>
                   <input type="date" value={iStart} onChange={e=>setIStart(e.target.value)} required />
@@ -1069,8 +1139,19 @@ export default function AdminDashboard() {
             </div>
             <div className="igroup">
               <label>Domain / Specialization</label>
-              <input type="text" value={editFields.domain ?? ''} onChange={e=>setEditFields(p=>({...p,domain:e.target.value}))} required />
+              <select value={selectedEDomain} onChange={e => setSelectedEDomain(e.target.value)} required>
+                <option value="" disabled>-- SELECT DOMAIN --</option>
+                {DOMAIN_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
+            {selectedEDomain === 'other (to enter)' && (
+              <div className="igroup f-full">
+                <label>Custom Domain Name</label>
+                <input type="text" placeholder="Enter custom domain name" value={customEDomain} onChange={e => setCustomEDomain(e.target.value)} required />
+              </div>
+            )}
             <div className="igroup">
               <label>Start Date</label>
               <input type="date" value={editFields.start_date ?? ''} onChange={e=>setEditFields(p=>({...p,start_date:e.target.value}))} required />
@@ -1146,8 +1227,19 @@ export default function AdminDashboard() {
             </div>
             <div className="igroup">
               <label>Domain / Specialization</label>
-              <input type="text" value={editFields.domain ?? ''} onChange={e=>setEditFields(p=>({...p,domain:e.target.value}))} required />
+              <select value={selectedEDomain} onChange={e => setSelectedEDomain(e.target.value)} required>
+                <option value="" disabled>-- SELECT DOMAIN --</option>
+                {DOMAIN_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
+            {selectedEDomain === 'other (to enter)' && (
+              <div className="igroup f-full">
+                <label>Custom Domain Name</label>
+                <input type="text" placeholder="Enter custom domain name" value={customEDomain} onChange={e => setCustomEDomain(e.target.value)} required />
+              </div>
+            )}
             <div className="igroup">
               <label>Start Date</label>
               <input type="date" value={editFields.start_date ?? ''} onChange={e=>setEditFields(p=>({...p,start_date:e.target.value}))} required />

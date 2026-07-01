@@ -432,6 +432,7 @@ export default function AdminDashboard() {
   /* ── Selection ── */
   const toggleSelect    = (id) => setSelected(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
   const toggleSelectAll = () => selected.size===filteredCerts.length ? setSelected(new Set()) : setSelected(new Set(filteredCerts.map(c=>c.id)));
+  const toggleSelectAllRequests = () => selected.size===filteredRequests.length ? setSelected(new Set()) : setSelected(new Set(filteredRequests.map(r=>r.id)));
 
   const handleBulkDelete = async () => {
     if (!selected.size) return;
@@ -441,6 +442,45 @@ export default function AdminDashboard() {
     if (error) showToast('❌ Bulk delete failed.', 'err');
     else { showToast(`🗑️ ${ids.length} certificate(s) deleted.`, 'ok'); setSelected(new Set()); loadData(); }
   };
+
+  const handleBulkApprove = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Are you sure you want to approve ${selected.size} selected requests?`)) return;
+    
+    const recordsToApprove = filteredRequests.filter(r => selected.has(r.id));
+    
+    const yr = String(new Date().getFullYear()).slice(-2);
+    const prefix = `NTCS${yr}I/T`;
+    
+    let maxInternship = 0;
+    let maxTraining = 0;
+    certs.forEach(c => {
+      if (c.cert_no && c.cert_no.startsWith(prefix)) {
+        const suffix = c.cert_no.substring(prefix.length);
+        if (/^\d+$/.test(suffix)) {
+          if (c.program_type === 'Internship') maxInternship = Math.max(maxInternship, parseInt(suffix, 10));
+          if (c.program_type === 'Training') maxTraining = Math.max(maxTraining, parseInt(suffix, 10));
+        }
+      }
+    });
+
+    const updates = recordsToApprove.map(r => {
+      let maxToUse;
+      if (r.program_type === 'Internship') { maxInternship++; maxToUse = maxInternship; }
+      else { maxTraining++; maxToUse = maxTraining; }
+      
+      return {
+        ...r,
+        cert_no: `${prefix}${String(maxToUse).padStart(3, '0')}`,
+        is_hidden: null,
+      };
+    });
+
+    const { error } = await supabase.from('certificates').upsert(updates);
+    if (error) showToast('❌ Bulk approve failed.', 'err');
+    else { showToast(`✅ ${updates.length} certificate(s) approved and issued.`, 'ok'); setSelected(new Set()); loadData(); }
+  };
+
 
   /* ── Auto cert no ── */
   const calculateNextCertNo = (programType) => {
@@ -1044,18 +1084,26 @@ export default function AdminDashboard() {
           {/* ── PENDING REQUESTS MANAGEMENT TAB ── */}
           {activeTab === 'requests' && (
             <div className="t-card">
-              <div className="t-toolbar">
-                <h3>Pending Filings Queue</h3>
-                <input type="text" className="s-input" placeholder="🔍 Filter pending list..." value={search} onChange={e=>setSearch(e.target.value)} />
+              <div className="t-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
+                  <h3 style={{ margin: 0 }}>Pending Filings Queue</h3>
+                  <button className={`nav-btn outline ${selected.size>0?'':'disabled'}`} onClick={handleBulkApprove} disabled={selected.size===0} style={{ padding:'0 16px', height:'32px', fontSize:'12px', borderColor:'var(--emerald-500)', color:'var(--emerald-600)', margin: 0 }}>✅ Approve</button>
+                  <button className={`nav-btn ${selected.size>0?'danger-btn':'outline disabled'}`} onClick={handleBulkDelete} disabled={selected.size===0} style={{ padding:'0 16px', height:'32px', fontSize:'12px', margin: 0 }}>🗑 Delete</button>
+                </div>
+                <input type="text" className="s-input" placeholder="🔍 Filter pending list..." value={search} onChange={e=>setSearch(e.target.value)} style={{ margin: 0 }} />
               </div>
               <div style={{ overflowX:'auto' }}>
                 <table>
                   <thead>
                     <tr>
+                      <th style={{ width:'40px', textAlign:'center', paddingLeft:'16px' }}>
+                        <input type="checkbox" checked={selected.size>0 && selected.size===filteredRequests.length} onChange={toggleSelectAllRequests} style={{ cursor:'pointer', width:'15px', height:'15px', accentColor:'var(--cyan-600)' }} />
+                      </th>
                       <th>Assignee Reference</th>
                       <th>Contact (Mobile)</th>
                       <th>Scheme Module</th>
                       <th>Specialization Field</th>
+                      <th>College</th>
                       <th>Duration Windows</th>
                       <th>Evaluation Controls</th>
                     </tr>
@@ -1064,11 +1112,11 @@ export default function AdminDashboard() {
                     {loading ? (
                       Array.from({length:3}).map((_,i)=>(
                         <tr key={i} className="skeleton-row">
-                          {Array.from({length:6}).map((__,j)=><td key={j}><div className="skeleton-box short" /></td>)}
+                          {Array.from({length:8}).map((__,j)=><td key={j}><div className="skeleton-box short" /></td>)}
                         </tr>
                       ))
                     ) : filteredRequests.length === 0 ? (
-                      <tr><td colSpan={6}>
+                      <tr><td colSpan={8}>
                         <div className="empty-state">
                           <div className="empty-state-icon">📥</div>
                           <div className="empty-state-title">No pending requests</div>
@@ -1077,7 +1125,10 @@ export default function AdminDashboard() {
                       </td></tr>
                     ) : (
                       filteredRequests.map(r => (
-                        <tr key={r.id}>
+                        <tr key={r.id} style={{ background:selected.has(r.id)?'var(--cyan-50)':'', transition:'background 0.15s ease' }}>
+                          <td style={{ textAlign:'center', paddingLeft:'16px' }}>
+                            <input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} style={{ cursor:'pointer', width:'15px', height:'15px', accentColor:'var(--cyan-600)' }} />
+                          </td>
                           <td>
                             <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
                               {r.photo_url ? (
@@ -1091,6 +1142,7 @@ export default function AdminDashboard() {
                           <td><span style={{ fontFamily:'var(--font-mono)', fontWeight:600 }}>{r.mobile}</span></td>
                           <td><span className={`badge ${r.program_type==='Internship'?'b-intern':'b-training'}`}>{r.program_type}</span></td>
                           <td style={{ color:'var(--slate-700)', fontWeight:600 }}>{r.domain}</td>
+                          <td style={{ color:'var(--slate-700)', fontSize:'12.5px' }}>{r.college_name || '—'}</td>
                           <td style={{ fontSize:'12px', color:'var(--muted)', whiteSpace:'nowrap' }}>{formatDate(r.start_date)} - {formatDate(r.end_date)}</td>
                           <td>
                             <div className="act-btns">

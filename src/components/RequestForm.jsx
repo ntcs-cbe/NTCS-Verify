@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
@@ -318,8 +317,7 @@ const DOMAIN_OPTIONS = [
   'other (to enter)'
 ];
 
-export default function Request() {
-  const navigate = useNavigate();
+export default function RequestForm({ onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ message: '', type: '', show: false });
 
@@ -343,7 +341,7 @@ export default function Request() {
 
   const handleFormDispatch = async (e) => {
     e.preventDefault();
-    if (!photo) { showToast('❌ Identity portrait verification photo is required.', 'err'); return; }
+    if (!photo) { showToast('❌ Profile photo is required.', 'err'); return; }
     if (!mobile || mobile.replace(/\D/g, '').length < 10) { showToast('❌ Enter a valid 10-digit mobile number.', 'err'); return; }
     if (!/^[a-zA-Z\s\.]+$/.test(name.trim())) { showToast('❌ Name contains invalid characters. Only letters are allowed.', 'err'); return; }
 
@@ -354,7 +352,7 @@ export default function Request() {
     if (!collegeName.trim()) { showToast('❌ College Name is required.', 'err'); return; }
     if (!department.trim()) { showToast('❌ Department is required.', 'err'); return; }
     if (!collegeCity.trim()) { showToast('❌ College City is required.', 'err'); return; }
-    if (new Date(startDate) > new Date(endDate)) { showToast('❌ Epoch timeline bounds parameters are reversed.', 'err'); return; }
+    if (new Date(startDate) > new Date(endDate)) { showToast('❌ Start date cannot be after end date.', 'err'); return; }
 
     setLoading(true);
 
@@ -393,45 +391,32 @@ export default function Request() {
       const { error: insertError } = await supabase.from('certificates').insert([requestPayload]);
 
       if (insertError) {
-        showToast('Submission rejected. Cloud schema deployment fault.', 'err');
+        showToast('Submission failed. Please try again later.', 'err');
       } else {
-        showToast('🎉 Application successfully submitted to active logs!', 'ok');
+        showToast('🎉 Application successfully submitted!', 'ok');
         setName(''); setMobile(''); setSelectedDomain(''); setCustomDomain(''); setStartDate(''); setEndDate(''); setPhoto(null);
         setCollegeName(''); setDepartment(''); setYear('I'); setCollegeCity('');
-        setTimeout(() => navigate('/'), 2000);
+        if (onSuccess) {
+          setTimeout(onSuccess, 1500);
+        }
       }
     } catch (err) {
-      console.error('Thread fault context exception: [Hidden for security]');
-      showToast('Ecosystem thread context runtime failure.', 'err');
+      console.error('Submission error:', err);
+      showToast('Network error. Please try again.', 'err');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="page active" style={{ background: 'var(--ink-950)', minHeight: '100vh', position: 'relative', overflowX: 'hidden' }}>
-
-      {/* Background Animated Decorator Canvas */}
-      <div className="verify-bg">
-        <div className="orb orb-1"></div>
-        <div className="orb orb-2"></div>
-        <div className="orb orb-3"></div>
-        <div className="verify-lines">
-          <div className="vline" style={{ left: '12%', animationDuration: '6s' }}></div>
-          <div className="vline" style={{ left: '48%', animationDuration: '5s', animationDelay: '0.3s' }}></div>
-          <div className="vline" style={{ left: '82%', animationDuration: '7s', animationDelay: '1.2s' }}></div>
-        </div>
-      </div>
-
-
-
-      <div style={{ padding: '60px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - var(--topnav-h))', position: 'relative', zIndex: 10 }}>
+    <>
+      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 10, animation: 'pageIn 0.3s ease' }}>
         <div className="verify-styled-card" style={{ width: '100%', maxWidth: '700px' }}>
 
           {/* Header Segment Matching Verify Portal */}
           <div className="verify-style-header">
-            <h2>Request <span>Deployment Token</span></h2>
-            <p>Submit application metadata parameters directly into the active authentication ledger.</p>
+            <h2>Submit <span>Application</span></h2>
+            <p>Fill in your details below to submit your certificate application.</p>
           </div>
 
           <form onSubmit={handleFormDispatch} className="f-grid" style={{ padding: '32px 38px' }}>
@@ -445,9 +430,9 @@ export default function Request() {
             </div>
 
             <div className="igroup">
-              <label className="verify-style-label">Contact Reference (Mobile)</label>
+              <label className="verify-style-label">Mobile Number</label>
               <input
-                type="tel" maxLength="10" className="verify-style-input" placeholder="10-digit primary contact"
+                type="tel" maxLength="10" className="verify-style-input" placeholder="10-digit mobile number"
                 value={mobile} onChange={e => setMobile(e.target.value.replace(/\D/g, ''))} required
               />
             </div>
@@ -487,10 +472,10 @@ export default function Request() {
             </div>
 
             <div className="igroup">
-              <label className="verify-style-label">Classification Schema Path</label>
+              <label className="verify-style-label">Program Type</label>
               <select className="verify-style-input verify-style-select" value={programType} onChange={e => setProgramType(e.target.value)}>
-                <option value="Internship">Internship Certification Track</option>
-                <option value="Training">Training Module Framework</option>
+                <option value="Internship">Internship</option>
+                <option value="Training">Training</option>
               </select>
             </div>
 
@@ -539,16 +524,16 @@ export default function Request() {
               />
             </div>
 
-            {/* INTEGRATED PORTRAIT PHOTOGRAPH CLIP ENGINE MATRIX */}
+            {/* PHOTO UPLOAD */}
             <PhotoUploader value={photo} onChange={setPhoto} notify={showToast} label="Upload Your Photo" />
 
-            {/* DISPATCH ACTION CONTROL */}
+            {/* SUBMIT BUTTON */}
             <div className="f-full" style={{ borderTop: '1px solid var(--slate-100)', paddingTop: '20px', marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="submit" className="btn-issue" disabled={loading}
                 style={{ margin: 0, padding: '14px 40px', fontSize: '13px' }}
               >
-                {loading ? 'Processing Ledger Strings...' : 'Submit Entry Request 🚀'}
+                {loading ? 'Submitting...' : 'Submit Application 🚀'}
               </button>
             </div>
 
@@ -557,6 +542,6 @@ export default function Request() {
       </div>
 
       <div className={`toast ${toast.type} ${toast.show ? 'show' : ''}`}>{toast.message}</div>
-    </div>
+    </>
   );
 }

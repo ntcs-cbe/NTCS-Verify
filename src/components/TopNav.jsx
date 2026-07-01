@@ -44,18 +44,9 @@ export default function TopNav() {
 
       {/* Interactive Navigation Action Group Controls */}
       <div className={`nav-actions-group ${isOpen ? 'menu-open' : ''}`}>
-        <button className="nav-btn outline" onClick={() => handleNavigation('/')}>
-          🔍 Verify Certificate
-        </button>
 
-        <button className="nav-btn outline" onClick={() => handleNavigation('/status')}>
-          📊 Check Status
-        </button>
 
-        {/* RESTORED AND SYNCED REQUEST NAVIGATION ELEMENT */}
-        <button className="nav-btn outline" onClick={() => handleNavigation('/request')}>
-          🎓 Request Token
-        </button>
+
       </div>
     </nav>
   );
